@@ -215,6 +215,7 @@ class Engine(object):
         the overridden run() method of the requested experiment
         Engine.
         """
+        run_meth_on_engine_ancestors(self, "init")
         (self.options, self.args) = self.options_parser.parse_args(args = args)
         # _engineargs hack: to make running an engine from ipython
         # more convenient: if ipython is run from command line as
@@ -258,7 +259,6 @@ class Engine(object):
         logger.info("command line arguments: %s" % (sys.argv,))
         logger.info("command line: " + " ".join([pipes.quote(arg) for arg in sys.argv]))
         logger.info("run in directory %s", self.result_dir)
-        run_meth_on_engine_ancestors(self, "init")
         run_meth_on_engine_ancestors(self, "run")
 
     # ------------------------------------------------------------------
