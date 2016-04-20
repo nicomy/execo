@@ -170,7 +170,7 @@ class Engine(object):
             "-l", dest = "log_level", default = None,
             help = "log level (int or string). Default = inherit execo logger level")
         self.options_parser.add_option(
-            "-L", dest = "output_mode", action="store_const", const = "copy", default = False,
+            "-L", dest = "output_mode", action="store_const", const = "copy", default = True,
             help = "copy stdout / stderr to log files in the experiment result directory. Default = %default")
         self.options_parser.add_option(
             "-R", dest = "output_mode", action="store_const", const = "redirect", default = False,
