@@ -935,7 +935,7 @@ class Process(ProcessBase):
     """
 
     def __init__(self, cmd, shell = False,
-                 pty = False, kill_subprocesses = None,
+                 pty = False, kill_subprocesses = None, cwd = None,
                  **kwargs):
         """:param cmd: string or tuple containing the command and args to run.
 
@@ -951,6 +951,9 @@ class Process(ProcessBase):
         :param kill_subprocesses: If True, signals are also sent to
           subprocesses. If None, automatically decide based on shell =
           True/False.
+
+        :param cwd: If set, the subprocess will be executed in the
+          given directory. See ``subprocess.Popen``.
         """
         super(Process, self).__init__(cmd, **kwargs)
         self.shell = shell
@@ -963,6 +966,9 @@ class Process(ProcessBase):
         self.kill_subprocesses = kill_subprocesses
         """If True, signals are also sent to subprocesses. If None, automatically
         decide based on shell = True/False."""
+        self.cwd = cwd
+        """ If set, the subprocess will be executed in the given directory.
+        See ``subprocess.Popen``."""
         self.process = None
         self.pid = None
         """Subprocess's pid, if available (subprocess started) or None"""
@@ -1055,6 +1061,7 @@ class Process(ProcessBase):
                                                 stderr = subprocess.PIPE,
                                                 close_fds = True,
                                                 shell = self.shell,
+                                                cwd = self.cwd,
                                                 preexec_fn = lambda: os.setpgid(0, the_conductor.pgrp))
                 self.stdout_fd = self._ptymaster
                 self.stderr_fd = self.process.stderr.fileno()
