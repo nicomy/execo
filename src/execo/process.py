@@ -1073,6 +1073,7 @@ class Process(ProcessBase):
                                                 stderr = subprocess.PIPE,
                                                 close_fds = True,
                                                 shell = self.shell,
+                                                cwd = self.cwd,
                                                 preexec_fn = lambda: os.setpgid(0, the_conductor.pgrp))
                 self.stdout_fd = self.process.stdout.fileno()
                 self.stderr_fd = self.process.stderr.fileno()
