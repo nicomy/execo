@@ -16,6 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
+from __future__ import print_function
 import logging
 import os
 import sys
@@ -244,21 +245,26 @@ def load_configuration(filename, dicts_confs):
     if os.path.isfile(filename):
         jailed_globals = {}
         try:
-            execfile(filename, jailed_globals)
-        except Exception, exc: #IGNORE:W0703
-            print "ERROR while reading config file %s:" % (filename,)
-            print exc
+            with open(filename) as f:
+                code = f.read()
+                ccode = compile(code, filename, 'exec')
+                exec(ccode, jailed_globals)
+        except Exception as exc: #IGNORE:W0703
+            print("ERROR while reading config file %s:" % (filename,))
+            print(exc)
         for (dictio, conf) in dicts_confs:
-            if jailed_globals.has_key(conf):
+            if conf in jailed_globals:
                 dictio.update(jailed_globals[conf])
 
 def get_user_config_filename():
     _user_conf_file = None
-    if os.environ.has_key('HOME'):
+    if 'HOME' in os.environ:
         _user_conf_file = os.environ['HOME'] + '/.execo.conf.py'
     return _user_conf_file
 
-load_configuration(
-  get_user_config_filename(),
-  ((configuration, 'configuration'),
-   (default_connection_params, 'default_connection_params')))
+__cf = get_user_config_filename()
+if __cf:
+    load_configuration(
+        __cf,
+        ((configuration, 'configuration'),
+         (default_connection_params, 'default_connection_params')))

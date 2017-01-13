@@ -16,13 +16,18 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from log import style, logger, logger_handler
-from time_utils import format_unixts
-from utils import compact_output
-from config import configuration
-import Queue, errno, fcntl, logging, os, select, \
-  signal, sys, thread, threading, time, traceback, \
+from __future__ import print_function
+from .log import style, logger, logger_handler
+from .time_utils import format_unixts
+from .utils import compact_output, MAXFD
+from .config import configuration
+import errno, fcntl, logging, os, select, \
+  signal, sys, threading, time, traceback, \
   subprocess, resource, heapq
+if sys.version_info >= (3,):
+    import queue, _thread
+else:
+    import Queue as queue, thread as _thread
 
 # assuming import of this module is triggered from "the main" thread,
 # the following call is intended to workaround python issue #7980
@@ -35,11 +40,9 @@ except:
 
 # max number of bytes read when reading asynchronously from a pipe
 try:
-    _MAXREAD = int(subprocess.Popen(["getconf", "_POSIX_SSIZE_MAX"], stdout=subprocess.PIPE).communicate()[0])
+    _MAXREAD = int(subprocess.Popen(["getconf", "_POSIX_SSIZE_MAX"], stdout=subprocess.PIPE, universal_newlines=True).communicate()[0])
 except:
     _MAXREAD = 32767
-
-DEFAULT_MAXFD = 1024
 
 if sys.platform.startswith('darwin') or sys.platform.startswith('win'):
 
@@ -58,7 +61,7 @@ if sys.platform.startswith('darwin') or sys.platform.startswith('win'):
     POLLNVAL=32
 
     def dict_item_and(dic, item, field):
-        if dic.has_key(item):
+        if item in dic:
             dic[item] |= field
         else:
             dic[item] = field
@@ -110,7 +113,7 @@ if sys.platform.startswith('darwin') or sys.platform.startswith('win'):
             for fd in ready_readfds: dict_item_and(fd_events, fd, POLLIN)
             for fd in ready_writefds: dict_item_and(fd_events, fd, POLLOUT)
             for fd in ready_exceptfds: dict_item_and(fd_events, fd, POLLERR)
-            return list(fd_events.iteritems())
+            return list(fd_events.items())
 
 else:
     from select import poll, POLLIN, POLLPRI, POLLOUT, POLLERR, POLLHUP, POLLNVAL
@@ -139,7 +142,7 @@ def _checked_waitpid(pid, options):
     while True:
         try:
             return os.waitpid(pid, options)
-        except OSError, e:
+        except OSError as e:
             if e.errno == errno.ECHILD:
                 return 0, 0
             elif e.errno == errno.EINTR:
@@ -148,29 +151,29 @@ def _checked_waitpid(pid, options):
                 raise
 
 def _read_asmuch(fileno):
-    """Read as much as possible from a file descriptor withour blocking.
+    """Read as much as possible from a file descriptor without blocking.
 
     Relies on the file descriptor to have been set non blocking.
 
     Returns a tuple (string, eof). string is the data read, eof is
     a boolean flag.
     """
+    buf = b''
     eof = False
-    string = ""
     while True:
         try:
-            tmpstring = os.read(fileno, _MAXREAD)
-        except OSError, err:
+            tmpbuf = os.read(fileno, _MAXREAD)
+        except OSError as err:
             if err.errno == errno.EAGAIN:
                 break
             else:
                 raise
-        if tmpstring == "":
+        if len(tmpbuf) == 0:
             eof = True
             break
         else:
-            string += tmpstring
-    return (string, eof)
+            buf += tmpbuf
+    return (buf, eof)
 
 def _set_fd_nonblocking(fileno):
     """Sets a file descriptor in non blocking mode.
@@ -233,6 +236,8 @@ class _Conductor(object):
                                             # _read_asmuch() relies on
                                             # file descriptors to be non
                                             # blocking
+        _set_fd_nonblocking(self.__wpipe)   # because we call
+                                            # signal.set_wakeup_fd on this pipe
         self.__poller = poll()   # asynchronous I/O with all
                                  # subprocesses filehandles
         self.__poller.register(self.__rpipe,
@@ -251,7 +256,7 @@ class _Conductor(object):
                                 #
                                 # values: their `Process`
         self.__timeline = [] # heapq of `Process` with a timeout date
-        self.__process_actions = Queue.Queue()
+        self.__process_actions = queue.Queue()
                                 # thread-safe FIFO used to send requests
                                 # from main thread and conductor thread:
                                 # we enqueue tuples (function to call,
@@ -278,10 +283,7 @@ class _Conductor(object):
             os.umask(0)
             maxfd = resource.getrlimit(resource.RLIMIT_NOFILE)[1]
             if (maxfd == resource.RLIM_INFINITY):
-                if (os.sysconf_names.has_key("SC_OPEN_MAX")):
-                    maxfd = maxfd = os.sysconf("SC_OPEN_MAX")
-                else:
-                    maxfd = DEFAULT_MAXFD
+                maxfd = MAXFD
             for fd in range(0, maxfd):
                 try: os.close(fd)
                 except OSError: pass
@@ -298,7 +300,7 @@ class _Conductor(object):
 
     def __wakeup(self):
         # wakeup the I/O thread
-        os.write(self.__wpipe, ".")
+        os.write(self.__wpipe, b'.')
 
     def start(self):
         """Start the conductor thread."""
@@ -311,6 +313,8 @@ class _Conductor(object):
         # detect this closing and self stop
         logger.debug("terminating I/O thread of %s", self)
         os.close(self.__wpipe)
+        self.__io_thread.join()
+        logger.debug("I/O thread of %s terminated", self)
 
     def start_process(self, process):
         """Register a new `execo.process.Process` to be started and handled by the conductor.
@@ -390,33 +394,33 @@ class _Conductor(object):
         # unregister a Process from conductor
         logger.fdebug("removing %s from %s", str(process), self)
         if process not in self.__processes:
-            raise ValueError, "trying to remove a process which was not yet added to conductor"
+            raise ValueError("trying to remove a process which was not yet added to conductor")
         remove_from_heapq(self.__timeline, lambda e: e[1] == process)
         del self.__pids[process.pid]
         fileno_stdout = process.stdout_fd
         fileno_stderr = process.stderr_fd
-        last_bytes = ""
-        if self.__fds.has_key(fileno_stdout):
+        last_bytes = b''
+        if fileno_stdout in self.__fds:
             del self.__fds[fileno_stdout]
             self.__poller.unregister(fileno_stdout)
             # read the last data that may be available on stdout of
             # this process
             try:
                 (last_bytes, _) = _read_asmuch(fileno_stdout)
-            except OSError, e:
-                if e.errno == errno.EBADF: last_bytes = ""
+            except OSError as e:
+                if e.errno == errno.EBADF: last_bytes = b''
                 else: raise e
         process._handle_stdout(last_bytes, True, False)
-        last_bytes = ""
-        if self.__fds.has_key(fileno_stderr):
+        last_bytes = b''
+        if fileno_stderr in self.__fds:
             del self.__fds[fileno_stderr]
             self.__poller.unregister(fileno_stderr)
             # read the last data that may be available on stderr of
             # this process
             try:
                 (last_bytes, _) = _read_asmuch(fileno_stderr)
-            except OSError, e:
-                if e.errno == errno.EBADF: last_bytes = ""
+            except OSError as e:
+                if e.errno == errno.EBADF: last_bytes = b''
                 else: raise e
         process._handle_stderr(last_bytes, True, False)
         self.__processes.remove(process)
@@ -476,9 +480,9 @@ class _Conductor(object):
         try:
             self.__io_loop()
         except Exception: #IGNORE:W0703
-            print "exception in conductor I/O loop thread"
+            print("exception in conductor I/O loop thread")
             traceback.print_exc()
-            thread.interrupt_main()
+            _thread.interrupt_main()
 
     def __io_loop(self):
         # conductor thread infinite I/O loop
@@ -504,7 +508,7 @@ class _Conductor(object):
                 if fd == self.__rpipe:
                     event_on_rpipe = event
                 else:
-                    if self.__fds.has_key(fd):
+                    if fd in self.__fds:
                         process, stream_handler_func = self.__fds[fd]
                         logger.fdebug("event %s on fd %s, process %s", _event_desc(event), fd, str(process))
                         if event & POLLIN:
@@ -530,21 +534,28 @@ class _Conductor(object):
                     finished = True
                 if event_on_rpipe & POLLERR:
                     finished = True
-                    raise IOError, "Error on inter-thread communication pipe"
+                    raise IOError("Error on inter-thread communication pipe")
             with self.lock:
                 while True:
                     try:
                         # call (in the right order!) all functions
                         # enqueued from other threads
                         func, args = self.__process_actions.get_nowait()
-                    except Queue.Empty:
+                    except queue.Empty:
                         break
                     func(*args)
                 self.__update_terminated_processes()
                 self.condition.notifyAll()
+        logger.debug("conductor exiting I/O loop")
         self.__poller.unregister(self.__rpipe)
-        os.close(self.__rpipe)
-        os.close(self.__wpipe)
+        try:
+            os.close(self.__rpipe)
+        except:
+            pass
+        try:
+            os.close(self.__wpipe)
+        except:
+            pass
 
     def __reaper_thread_func(self):
         # run func for the reaper thread, whose role is to wait to be
@@ -588,33 +599,33 @@ the_conductor = _Conductor().start()
 
 def debug_dump_processes():
     with the_conductor.lock:
-        print >> sys.stderr, "\n===== %s dump current %i conductor handled processes:\n" % (format_unixts(time.time()), len(the_conductor._Conductor__processes),)
+        print("\n===== %s dump current %i conductor handled processes:\n" % (format_unixts(time.time()), len(the_conductor._Conductor__processes),), file=sys.stderr)
         for process in the_conductor._Conductor__processes:
-            print >> sys.stderr, "====="
-            print >> sys.stderr, str(process)
-            print >> sys.stderr, "stdout:\n" + compact_output(process.stdout)
-            print >> sys.stderr, "stderr:\n" + compact_output(process.stderr)
-            print >> sys.stderr
-        print >> sys.stderr, "=====\n"
+            print("=====", file=sys.stderr)
+            print(str(process), file=sys.stderr)
+            print("stdout:\n" + compact_output(process.stdout), file=sys.stderr)
+            print("stderr:\n" + compact_output(process.stderr), file=sys.stderr)
+            print(file=sys.stderr)
+        print("=====\n", file=sys.stderr)
 
 _debug_thread = None
 _debug_thread_id = None
 _debug_thread_lock = threading.Lock()
 
 def debug_dump_threads():
-    print >> sys.stderr, "\n===== %s dump thread stack frames. %i threads. conductor lock = %s:\n" % (
+    print("\n===== %s dump thread stack frames. %i threads. conductor lock = %s:\n" % (
         format_unixts(time.time()),
         len(sys._current_frames()),
-        the_conductor.lock)
+        the_conductor.lock), file=sys.stderr)
     idx=0
-    for thread_id, frame in sys._current_frames().iteritems():
-        print >> sys.stderr, "===== thread #%i [%#x] refcount = %s" % (idx, thread_id, sys.getrefcount(frame))
+    for thread_id, frame in sys._current_frames().items():
+        print("===== thread #%i [%#x] refcount = %s" % (idx, thread_id, sys.getrefcount(frame)), file=sys.stderr)
         if thread_id != _debug_thread_id:
             traceback.print_stack(frame, file = sys.stderr)
         else:
-            print >> sys.stderr, "  debug thread, skipping"
+            print("  debug thread, skipping", file=sys.stderr)
         idx += 1
-    print >> sys.stderr, "=====\n"
+    print("=====\n", file=sys.stderr)
 
 class _DebugThread(threading.Thread):
 

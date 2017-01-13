@@ -35,7 +35,7 @@ along with Execo.  If not, see <http://www.gnu.org/licenses/>
 Versions
 ========
 
-latest stable version: v2.5.3 (2016-01-25)
+latest stable version: v2.6.1 (2016-10-11)
 
 Installation instructions
 =========================
@@ -84,9 +84,12 @@ platforms
 prerequisites
 -------------
 
-execo installation absolutely requires ``python`` (>=
-2.6). ``execo_g5k`` needs ``python-httplib2``. Optionnal packages are
+execo installation absolutely requires ``python`` 2.6 / 2.7 or
+>=3.2. ``execo_g5k`` needs ``python-requests``. Optionnal packages are
 (debian package names, in order of decreasing importance):
+
+- under python 2.6, ``python-argparse`` is needed for
+  `execo_engine.engine.Engine`
 
 - ``python-keyring`` for allowing storage of `execo_g5k.api_utils` api
   password in the desktop environment keyring (allowing asking it only
@@ -166,6 +169,9 @@ How to contribute
 - start contributing by sending clean patches or report bugs.
 
 - stay consistent with the coding and naming style
+
+- code must be compatible with python 2.6, 2.7 and 3.2+ (see
+  http://execo.gforge.inria.fr/doc/latest-stable/python2-python3.html)
 
 - use the core systems provided (eg. the configuration system, the tty
   coloring system, the logger, etc.) instead of developing your own.

@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from config import configuration
+from .config import configuration
 import pipes, subprocess, os, time, sys, traceback, re, functools, threading, random
 
 def comma_join(*args):
@@ -25,13 +25,13 @@ def comma_join(*args):
 def compact_output(s):
     thresh = configuration.get('compact_output_threshold')
     if thresh == 0 or len(s) <= thresh: return s
-    return s[:thresh/2] + "\n[...]\n" + s[(thresh/2)-thresh:]
+    return s[:thresh//2] + "\n[...]\n" + s[(thresh//2)-thresh:]
 
 def str_from_cmdline(cmdline):
-    if hasattr(cmdline, '__iter__'):
-        return " ".join([ pipes.quote(arg) for arg in cmdline ])
-    else:
+    if is_string(cmdline):
         return cmdline
+    else:
+        return " ".join([ pipes.quote(arg) for arg in cmdline ])
 
 def name_from_cmdline(cmdline):
     cmdline = str_from_cmdline(cmdline)
@@ -110,7 +110,19 @@ def get_port():
 
 def singleton_to_collection(arg):
     """Converts single object (including strings) to list of length one containing it"""
-    if not hasattr(arg, "__iter__"):
+    if not hasattr(arg, "__iter__") or is_string(arg):
         return [ arg ]
     else:
         return arg
+
+if sys.version_info >= (3,):
+    def is_string(s):
+        return isinstance(s, str)
+else:
+    def is_string(s):
+        return isinstance(s, basestring)
+
+if ("SC_OPEN_MAX" in os.sysconf_names):
+    MAXFD = os.sysconf("SC_OPEN_MAX")
+else:
+    MAXFD = 1024

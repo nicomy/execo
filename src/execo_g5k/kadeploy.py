@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from config import g5k_configuration
+from .config import g5k_configuration
 from execo.action import Remote, ActionNotificationProcessLH, \
     Action, get_remote
 from execo.config import make_connection_params
@@ -28,7 +28,7 @@ from execo.time_utils import format_seconds
 from execo.utils import comma_join, compact_output, singleton_to_collection
 from execo_g5k.config import default_frontend_connection_params
 from execo_g5k.utils import get_frontend_host, get_kavlan_host_name
-from utils import get_default_frontend
+from .utils import get_default_frontend
 import copy
 import re
 import time
@@ -64,12 +64,12 @@ class Deployment(object):
         cmd_line = g5k_configuration.get('kadeploy3')
         cmd_line += " " + g5k_configuration.get('kadeploy3_options')
         if self.env_file and self.env_name:
-            raise ValueError, "Deployment cannot have both env_file and env_name"
+            raise ValueError("Deployment cannot have both env_file and env_name")
         if (not self.env_file) and (not self.env_name):
             if g5k_configuration.get('default_env_name') and g5k_configuration.get('default_env_file'):
-                raise Exception, "g5k_configuration cannot have both default_env_name and default_env_file"
+                raise Exception("g5k_configuration cannot have both default_env_name and default_env_file")
             if (not g5k_configuration.get('default_env_name')) and (not g5k_configuration.get('default_env_file')):
-                raise Exception, "no environment name or file found"
+                raise Exception("no environment name or file found")
             if g5k_configuration.get('default_env_name'):
                 cmd_line += " -e %s" % (g5k_configuration['default_env_name'],)
             elif g5k_configuration.get('default_env_file'):
@@ -109,7 +109,7 @@ class _KadeployStdoutHandler(ProcessOutputHandler):
 
     def __init__(self):
         super(_KadeployStdoutHandler, self).__init__()
-        self._SECTION_NONE, self._SECTION_DEPLOYED_NODES, self._SECTION_UNDEPLOYED_NODES = range(3)
+        self._SECTION_NONE, self._SECTION_DEPLOYED_NODES, self._SECTION_UNDEPLOYED_NODES = list(range(3))
         self._current_section = self._SECTION_NONE
 
     def action_reset(self):
@@ -149,7 +149,7 @@ def _get_host_frontend(host):
     # - only handles execo.Host
     #
     # - we could use get_host_site but api_utils is not always
-    #   available (if api is down or if httplib2 is not available)
+    #   available (if api is down or if requests is not available)
     #   -> this is not true anymore (13/2/2014)
     #
     # - special bahavior: fallback to default frontend if unable to
@@ -170,7 +170,7 @@ def _get_host_frontend(host):
             if mo3 != None:
                 frontend = get_default_frontend()
             else:
-                raise ValueError, "unknown frontend for host %s" % host.address
+                raise ValueError("unknown frontend for host %s" % host.address)
     return frontend
 
 class FrontendPrefixWrapper(ProcessOutputHandler):
@@ -236,13 +236,13 @@ class Kadeployer(Remote):
         frontends = dict()
         for host in self._unique_hosts:
             frontend = _get_host_frontend(host)
-            if frontends.has_key(frontend):
+            if frontend in frontends:
                 frontends[frontend].append(host)
             else:
                 frontends[frontend] = [host]
         lifecycle_handler = ActionNotificationProcessLH(self, len(frontends))
         deploy_stdout_handler = _KadeployStdoutHandler()
-        for frontend in frontends.keys():
+        for frontend in frontends:
             kadeploy_command = self.deployment._get_common_kadeploy_command_line()
             for host in frontends[frontend]:
                 kadeploy_command += " -m %s" % (host.address,)
@@ -411,7 +411,7 @@ def deploy(deployment,
             for host in undeployed_hosts:
                 deployment_hostnames_mapping[host] = host
         deployed_check = get_remote(check_deployed_command,
-                                    deployment_hostnames_mapping.keys(),
+                                    list(deployment_hostnames_mapping),
                                     connection_params = node_connection_params)
         for p in deployed_check.processes:
                 p.nolog_exit_code = True

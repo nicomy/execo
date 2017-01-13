@@ -30,14 +30,14 @@ logger.info('Communication between %s and %s go through '
 logger.info('Active links between nodes %s and %s are: \n%s',
             style.host(path[0]),
             style.host(path[1]),
-            {k: v for k, v in g.edge[path[0]][path[1]].iteritems()
+            {k: v for k, v in g.edge[path[0]][path[1]].items()
                      if v['active']})
 
 logger.info('Generating graphical representation')
 plt = treemap(g)
 plt.show()
 
-save = raw_input('Save the figure ? (y/[N]):')
+save = raw_input('Save the figure ? (y/[N]):') # use input instead of raw_input on python3
 if save in ['y', 'Y', 'yes']:
     outfile = 'g5k_xp_graph.png'
     plt.savefig(outfile)

@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from config import g5k_configuration
+from .config import g5k_configuration
 from execo.config import make_connection_params
 from execo.exception import ProcessesFailed
 from execo.host import Host
@@ -27,7 +27,7 @@ from execo.utils import comma_join
 from execo_g5k.config import default_frontend_connection_params
 from execo.utils import checked_min, singleton_to_collection
 from execo_g5k.utils import get_frontend_host
-import os, re, time
+import os, re, time, codecs
 
 def _date_in_range(date, date_range):
     """Check that a date is inside a range. If range is None, return True."""
@@ -72,9 +72,9 @@ def format_oar_duration(duration):
     """
     duration = get_seconds(duration)
     s = duration
-    h = (s - (s % 3600)) / 3600
+    h = (s - (s % 3600)) // 3600
     s -= h * 3600
-    m = (s - (s % 60)) / 60
+    m = (s - (s % 60)) // 60
     s -= m * 60
     s = int(s)
     formatted_duration = ""
@@ -101,12 +101,12 @@ def oar_date_to_unixts(date):
         os.environ["TZ"] = "Europe/Paris"
         time.tzset()
         ts = str_date_to_unixts(date)
-        os.write(wend, str(ts))
+        os.write(wend, codecs.encode(str(ts)))
         os._exit(0)
     else:
         os.close(wend)
-        f = os.fdopen(rend)
-        ts = float(f.read())
+        f = os.fdopen(rend, 'rb')
+        ts = float(codecs.decode(f.read()))
         f.close()
         os.waitpid(pid, 0)
         return ts
@@ -284,7 +284,7 @@ def oarsub(job_specs, frontend_connection_params = None, timeout = False, abort_
             failed_processes.append(process)
         oar_job_ids.append((job_id, process.frontend))
     if len(failed_processes) > 0 and abort_on_error:
-        raise ProcessesFailed, failed_processes
+        raise ProcessesFailed(failed_processes)
     else:
         return oar_job_ids
 
@@ -385,7 +385,7 @@ def get_current_oar_jobs(frontends = None,
         else:
             failed_processes.append(process)
     if len(failed_processes) > 0 and abort_on_error:
-        raise ProcessesFailed, failed_processes
+        raise ProcessesFailed(failed_processes)
     else:
         if start_between or end_between:
             filtered_job_ids = []
@@ -442,10 +442,10 @@ def get_oar_job_info(oar_job_id = None, frontend = None,
     if isinstance(timeout, bool) and timeout == False:
         timeout = g5k_configuration.get('default_timeout')
     if oar_job_id == None:
-        if os.environ.has_key('OAR_JOB_ID'):
+        if 'OAR_JOB_ID' in os.environ:
             oar_job_id = os.environ['OAR_JOB_ID']
         else:
-            raise ValueError, "no oar job id given and no OAR_JOB_ID environment variable found"
+            raise ValueError("no oar job id given and no OAR_JOB_ID environment variable found")
     process = get_process("oarstat -fj %i" % (oar_job_id,),
                           host = get_frontend_host(frontend),
                           connection_params = make_connection_params(frontend_connection_params,
@@ -525,18 +525,18 @@ def wait_oar_job_start(oar_job_id = None, frontend = None,
                                  countdown.remaining(), nolog_exit_code = True,
                                  nolog_timeout = True, nolog_error = True)
         now = time.time()
-        if infos.has_key('start_date') or infos.has_key('scheduled_start'):
-            if infos.has_key('start_date'):
+        if 'start_date' in infos or 'scheduled_start' in infos:
+            if 'start_date' in infos:
                 new_prediction = infos['start_date']
-            elif infos.has_key('scheduled_start'):
+            elif 'scheduled_start' in infos:
                 new_prediction = infos['scheduled_start']
             prediction = check_prediction_changed(prediction, new_prediction)
-        if infos.has_key('state'):
+        if 'state' in infos:
             if infos['state'] == "Terminated" or infos['state'] == "Error":
                 return False
             if infos['state'] == "Running":
                 return True
-        if infos.has_key('start_date') or infos.has_key('scheduled_start'):
+        if 'start_date' in infos or 'scheduled_start' in infos:
             if now >= new_prediction:
                 sleep(checked_min(g5k_configuration.get('tiny_polling_interval'), countdown.remaining()))
                 continue
@@ -571,10 +571,10 @@ def get_oar_job_nodes(oar_job_id = None, frontend = None,
     if isinstance(timeout, bool) and timeout == False:
         timeout = g5k_configuration.get('default_timeout')
     if oar_job_id == None:
-        if os.environ.has_key('OAR_JOB_ID'):
+        if 'OAR_JOB_ID' in os.environ:
             oar_job_id = os.environ['OAR_JOB_ID']
         else:
-            raise ValueError, "no oar job id given and no OAR_JOB_ID environment variable found"
+            raise ValueError("no oar job id given and no OAR_JOB_ID environment variable found")
     countdown = Timer(timeout)
     wait_oar_job_start(oar_job_id, frontend, frontend_connection_params, countdown.remaining())
     process = get_process("(oarstat -sj %(oar_job_id)i | grep 'Running\|Terminated\|Error') > /dev/null 2>&1 && oarstat -pj %(oar_job_id)i | oarprint host -f -" % {'oar_job_id': oar_job_id},
@@ -588,7 +588,7 @@ def get_oar_job_nodes(oar_job_id = None, frontend = None,
         host_addresses = re.findall("(\S+)", process.stdout, re.MULTILINE)
         return [ Host(host_address) for host_address in host_addresses ]
     else:
-        raise ProcessesFailed, [process]
+        raise ProcessesFailed([process])
 
 def get_oar_job_subnets(oar_job_id = None, frontend = None, frontend_connection_params = None, timeout = False):
     """Return a tuple containing an iterable of tuples (IP, MAC) and a dict containing the subnet parameters of the reservation (if any).
@@ -614,10 +614,10 @@ def get_oar_job_subnets(oar_job_id = None, frontend = None, frontend_connection_
     if isinstance(timeout, bool) and timeout == False:
         timeout = g5k_configuration.get('default_timeout')
     if oar_job_id == None:
-        if os.environ.has_key('OAR_JOB_ID'):
+        if 'OAR_JOB_ID' in os.environ:
             oar_job_id = os.environ['OAR_JOB_ID']
         else:
-            raise ValueError, "no oar job id given and no OAR_JOB_ID environment variable found"
+            raise ValueError("no oar job id given and no OAR_JOB_ID environment variable found")
     countdown = Timer(timeout)
     wait_oar_job_start(oar_job_id, frontend, frontend_connection_params, countdown.remaining())
     # Get ip adresses
@@ -657,10 +657,10 @@ def get_oar_job_subnets(oar_job_id = None, frontend = None, frontend_connection_
                 }
         return (subnet_addresses, network_params)
     else:
-        raise ProcessesFailed, [ p for p in [process_net, process_ip] if not p.ok ]
+        raise ProcessesFailed([ p for p in [process_net, process_ip] if not p.ok ])
 
 def get_oar_job_kavlan(oar_job_id = None, frontend = None, frontend_connection_params = None, timeout = False):
-    """Return the vlan id of a job (if any).
+    """Return the list of vlan ids of a job (if any).
 
     :param oar_job_id: the oar job id. If None given, will try to get
       it from ``OAR_JOB_ID`` environment variable.
@@ -680,10 +680,10 @@ def get_oar_job_kavlan(oar_job_id = None, frontend = None, frontend_connection_p
     if isinstance(timeout, bool) and timeout == False:
         timeout = g5k_configuration.get('default_timeout')
     if oar_job_id == None:
-        if os.environ.has_key('OAR_JOB_ID'):
+        if 'OAR_JOB_ID' in os.environ:
             oar_job_id = os.environ['OAR_JOB_ID']
         else:
-            raise ValueError, "no oar job id given and no OAR_JOB_ID environment variable found"
+            raise ValueError("no oar job id given and no OAR_JOB_ID environment variable found")
     countdown = Timer(timeout)
     wait_oar_job_start(oar_job_id, frontend, frontend_connection_params, countdown.remaining())
     process = get_process(
@@ -700,12 +700,12 @@ def get_oar_job_kavlan(oar_job_id = None, frontend = None, frontend_connection_p
     process.run()
     if process.ok:
         try:
-            return int(process.stdout.strip().rstrip())
+            return [ int(x) for x in process.stdout.strip().rstrip().split('\r\n') ]
         except:
-            return None # handles cases where the job has no kavlan
-                        # resource or when kavlan isn't available
+            return [] # handles cases where the job has no kavlan
+                      # resource or when kavlan isn't available
     else:
-        raise ProcessesFailed, [process]
+        raise ProcessesFailed([process])
 
 def oarsubgrid(job_specs, reservation_date = None,
                walltime = None, job_type = None,

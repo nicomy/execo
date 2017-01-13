@@ -16,12 +16,12 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from subprocess import MAXFD
+from execo.utils import MAXFD
 import os, unicodedata, re, sys, ctypes, signal
 
 def _redirect_fd(fileno, filename):
     # create and open file filename, and redirect open file fileno to it
-    f = os.open(filename, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0644)
+    f = os.open(filename, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o644)
     os.dup2(f, fileno)
     os.close(f)
 
@@ -31,14 +31,14 @@ def _disable_sigs(sigs):
     # fragile and not portable. Code taken and modified from
     # http://stackoverflow.com/questions/3791398/how-to-stop-python-from-propagating-signals-to-subprocesses#3792294
     libc = ctypes.CDLL('libc.so.6')
-    SIGSET_NWORDS = 1024 / (8 *  ctypes.sizeof(ctypes.c_ulong))
+    SIGSET_NWORDS = 1024 // (8 *  ctypes.sizeof(ctypes.c_ulong))
     class SIGSET(ctypes.Structure):
         _fields_ = [
             ('val', ctypes.c_ulong * SIGSET_NWORDS)
             ]
     sigset = (ctypes.c_ulong * SIGSET_NWORDS)()
     for sig in sigs:
-        ulongindex = sig / ctypes.sizeof(ctypes.c_ulong)
+        ulongindex = sig // ctypes.sizeof(ctypes.c_ulong)
         ulongoffset = sig % ctypes.sizeof(ctypes.c_ulong)
         sigset[ulongindex] |= 1 << (ulongoffset - 1)
     mask = SIGSET(sigset)
@@ -52,7 +52,7 @@ def _tee_fd(fileno, filename):
     if pid == 0:
         os.dup2(pr, 0)
         os.dup2(fileno, 1)
-        if (os.sysconf_names.has_key("SC_OPEN_MAX")):
+        if ("SC_OPEN_MAX" in os.sysconf_names):
             maxfd = os.sysconf("SC_OPEN_MAX")
         else:
             maxfd = MAXFD
@@ -100,8 +100,14 @@ def slugify(value):
     more or less inspired / copy pasted from django (see
     http://stackoverflow.com/questions/295135/turn-a-string-into-a-valid-filename-in-python)
     """
-    value = unicode(str(value))
-    value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore')
-    value = unicode(re.sub('[^\w\s-]', '', value).strip().lower())
-    value = unicode(re.sub('[-\s]+', '-', value))
+    if sys.version_info >= (3,):
+        value = str(value)
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore').decode('ascii')
+        value = re.sub('[^\w\s-]', '', value).strip().lower()
+        value = re.sub('[-\s]+', '-', value)
+    else:
+        value = unicode(str(value))
+        value = unicodedata.normalize('NFKD', value).encode('ascii', 'ignore')
+        value = unicode(re.sub('[^\w\s-]', '', value).strip().lower())
+        value = unicode(re.sub('[-\s]+', '-', value))
     return value

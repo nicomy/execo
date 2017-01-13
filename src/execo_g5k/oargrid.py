@@ -16,7 +16,7 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from config import g5k_configuration
+from .config import g5k_configuration
 from execo.config import make_connection_params
 from execo.exception import ProcessesFailed
 from execo.host import Host
@@ -24,9 +24,9 @@ from execo.process import get_process
 from execo.time_utils import get_unixts, sleep
 from execo_g5k.config import default_frontend_connection_params
 from execo_g5k.utils import get_frontend_host
-from oar import format_oar_date, format_oar_duration, _date_in_range, \
+from .oar import format_oar_date, format_oar_duration, _date_in_range, \
     oar_date_to_unixts, oar_duration_to_seconds
-from api_utils import get_g5k_sites, get_cluster_site
+from .api_utils import get_g5k_sites, get_cluster_site
 import os
 import re
 
@@ -224,7 +224,7 @@ def get_current_oargrid_jobs(start_between = None,
             oargrid_job_ids = filtered_job_ids
         return oargrid_job_ids
     else:
-        raise ProcessesFailed, [process]
+        raise ProcessesFailed([process])
 
 def get_oargrid_job_info(oargrid_job_id = None, frontend_connection_params = None, timeout = False):
     """Return a dict with informations about an oargrid job.
@@ -304,7 +304,7 @@ def get_oargrid_job_oar_jobs(oargrid_job_id = None, frontend_connection_params =
             job_specs.append((int(m.group(2)), site))
         return job_specs
     else:
-        raise ProcessesFailed, [process]
+        raise ProcessesFailed([process])
 
 def wait_oargrid_job_start(oargrid_job_id = None, frontend_connection_params = None, timeout = False):
     """Sleep until an oargrid job's start time.
@@ -349,7 +349,7 @@ def get_oargrid_job_nodes(oargrid_job_id, frontend_connection_params = None, tim
         host_addresses = re.findall("(\S+)", process.stdout, re.MULTILINE)
         return list(set([ Host(host_address) for host_address in host_addresses ]))
     else:
-        raise ProcessesFailed, [process]
+        raise ProcessesFailed([process])
 
 def get_oargrid_job_key(oargrid_job_id = None, frontend_connection_params = None, timeout = False):
     """Return the filename of the oargrid job key

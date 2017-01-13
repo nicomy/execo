@@ -18,9 +18,9 @@ with packages managed by your distribution package manager.
 
 - Install from a release tar.gz package::
 
-   $ wget http://execo.gforge.inria.fr/downloads/execo-2.5.3.tar.gz
-   $ tar xzf execo-2.5.3.tar.gz
-   $ cd execo-2.5.3/
+   $ wget http://execo.gforge.inria.fr/downloads/execo-2.6.1.tar.gz
+   $ tar xzf execo-2.6.1.tar.gz
+   $ cd execo-2.6.1/
    $ python setup.py install --user
 
 - Or install from source repository if you want the very latest
@@ -45,7 +45,7 @@ with packages managed by your distribution package manager.
 
 - Or install from debian package::
 
-   $ dpkg -i python-execo_2.5.3_all.deb
+   $ dpkg -i python-execo_2.6.1_all.deb
 
 Configuration
 =============
@@ -182,10 +182,10 @@ sender, then wait for *process_B* termination, then kill
 *process_A*::
 
  from execo import *
- with SshProcess("nc -l -p 6543", "<host1>").start() as receiver:
-   receiver.expect("^[Ll]istening on", timeout=10)
+ with SshProcess("nc -lvp 6543", "<host1>").start() as receiver:
+   sleep(1)
    sender = SshProcess("echo 'hi there!' | nc -q 0 <host1> 6543", "<host2>").run()
- receiver.wait()
+   receiver.wait()
  print receiver.stdout
 
 This example shows the asynchronous control of processes: while a
@@ -213,24 +213,25 @@ This example also illustrates *method chaining*:
   the result can be affected to the sender variable because run()
   returns the object itself.
 
-In this example, We sleep for 1 second after starting the servers to
-make sure that they are ready to receive incoming connections (without
+In this example, We sleep for 1 second after starting the server to
+make sure that it is ready to receive incoming connections (without
 this sleep, it may work, perhaps most of the time, because netcat is
 fast, but we can't be sure). A better way to make sure the server is
 ready is to scan its verbose output (we add option ``-v`` to netcat
 receiver)::
 
  from execo import *
- with SshProcess("nc -vl -p 6543", "<host1>").start() as receiver:
+ with SshProcess("nc -vlp 6543", "<host1>").start() as receiver:
    receiver.expect("^[Ll]istening on")
    sender = SshProcess("echo 'hi there!' | nc -q 0 <host1> 6543", "<host2>").run()
- receiver.wait()
+   receiver.wait()
  print receiver.stdout
 
 Of course, this kind of code only works if you are sure that the
 version of netcat which is installed on ``<host1>`` is the one you
 expect, which outputs the string ``listening on ...`` on its standard
-output when in verbose mode and when its socket is listening.
+output when in verbose mode and when its socket is listening (on
+debian, you need nc.traditional)
 
 Interaction with processes: writing to a process stdin, expecting from a process stdout, on a remote serial port over ssh
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
@@ -304,7 +305,7 @@ generate traffic in both directions::
  with servers.start():
    sleep(1)
    clients.run()
- servers.wait()
+   servers.wait()
  print Report([ servers, clients ]).to_string()
  for s in servers.processes + clients.processes:
    print "%s\nstdout:\n%s\nstderr:\n%s" % (s, s.stdout, s.stderr)

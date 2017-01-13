@@ -16,20 +16,26 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from conductor import the_conductor
-from config import configuration
+from .conductor import the_conductor
+from .config import configuration, IODEBUG
 from execo.config import make_connection_params
 from execo.host import Host
-from log import style, logger
+from .log import style, logger
 from pty import openpty
-from ssh_utils import get_ssh_command, get_rewritten_host_address
-from time_utils import format_unixts, get_seconds, Timer
-from utils import compact_output, name_from_cmdline, non_retrying_intr_cond_wait, get_port, intr_event_wait, singleton_to_collection
+from .ssh_utils import get_ssh_command, get_rewritten_host_address
+from .time_utils import format_unixts, get_seconds, Timer
+from .utils import compact_output, name_from_cmdline, non_retrying_intr_cond_wait, get_port, intr_event_wait, singleton_to_collection, is_string
 from traceback import format_exc
-from report import Report
-from exception import ProcessesFailed
+from .report import Report
+from .exception import ProcessesFailed
 import errno, os, re, shlex, signal, subprocess
-import threading, time, pipes
+import threading, time, pipes, sys
+
+if sys.version_info >= (3,):
+    import codecs, locale
+    _decode = lambda s: codecs.decode(s, locale.getpreferredencoding())
+else:
+    _decode = lambda s: s
 
 STDOUT = 1
 """Identifier for the stdout stream"""
@@ -88,13 +94,11 @@ class ProcessOutputHandler(object):
         if not k in self._buffer:
             self._buffer[k] = ""
         self._buffer[k] += string
-        while True:
-            (line, sep, remaining) = self._buffer[k].partition('\n')
-            if sep != '':
-                self.read_line(process, stream, line + sep, False, False)
-                self._buffer[k] = remaining
-            else:
-                break
+        lines = self._buffer[k].splitlines(True)
+        if len(lines) > 2:
+            for line in lines[:-1]:
+                self.read_line(process, stream, line, False, False)
+            self._buffer[k] = lines[-1]
         if eof or error:
             self.read_line(process, stream, self._buffer[k], eof, error)
             del self._buffer[k]
@@ -142,7 +146,7 @@ def handle_process_output(process, stream, handler, string, eof, error):
         handler.read(process, stream, string, eof, error)
     elif hasattr(handler, "write"):
         handler.write(string)
-    elif isinstance(handler, basestring):
+    elif is_string(handler):
         k = (handler, stream)
         if not process._out_files.get(k):
             process._out_files[k] = open(handler, "w")
@@ -640,45 +644,49 @@ class ProcessBase(object):
         with self._lock:
             return self.started and not self.ended
 
-    def _handle_stdout(self, string, eof, error):
+    def _handle_stdout(self, buf, eof, error):
         """Handle stdout activity.
 
-        :param string: available stream output in string
+        :param buf: available stream output
 
         :param eof: True if end of file on stream
 
         :param error: True if error on stream
         """
-        _debugio_handler.read(self, STDOUT, string, eof, error)
+        buf = _decode(buf)
+        if logger.getEffectiveLevel() <= IODEBUG:
+            _debugio_handler.read(self, STDOUT, buf, eof, error)
         if self.default_stdout_handler:
-            self.stdout += string
+            self.stdout += buf
         if error == True:
             self.stdout_ioerror = True
         for handler in list(self.stdout_handlers):
             try:
-                handle_process_output(self, STDOUT, handler, string, eof, error)
-            except Exception, e:
+                handle_process_output(self, STDOUT, handler, buf, eof, error)
+            except Exception as e:
                 logger.error("process stdout handler %s raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
 
-    def _handle_stderr(self, string, eof, error):
+    def _handle_stderr(self, buf, eof, error):
         """Handle stderr activity.
 
-        :param string: available stream output in string
+        :param buf: available stream output
 
         :param eof: True if end of file on stream
 
         :param error: True if error on stream
         """
-        _debugio_handler.read(self, STDERR, string, eof, error)
+        buf = _decode(buf)
+        if logger.getEffectiveLevel() <= IODEBUG:
+            _debugio_handler.read(self, STDERR, buf, eof, error)
         if self.default_stderr_handler:
-            self.stderr += string
+            self.stderr += buf
         if error == True:
             self.stderr_ioerror = True
         for handler in list(self.stderr_handlers):
             try:
-                handle_process_output(self, STDERR, handler, string, eof, error)
-            except Exception, e:
+                handle_process_output(self, STDERR, handler, buf, eof, error)
+            except Exception as e:
                 logger.error("process stderr handler %s raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
 
@@ -758,7 +766,7 @@ class ProcessBase(object):
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.reset(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("process lifecycle handler %s reset raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
         with self._lock:
@@ -887,7 +895,7 @@ class ProcessBase(object):
 def _get_childs(pid):
     childs = []
     try:
-        s = subprocess.Popen(("ps", "--ppid", str(pid)), stdout=subprocess.PIPE).communicate()[0]
+        s = subprocess.Popen(("ps", "--ppid", str(pid)), stdout=subprocess.PIPE, universal_newlines=True).communicate()[0]
         tmp_childs = [ int(c) for c in re.findall("^\s*(\d+)\s+", s, re.MULTILINE) ]
         childs.extend(tmp_childs)
         for child in tmp_childs:
@@ -992,15 +1000,18 @@ class Process(ProcessBase):
 
     def _actual_cmd(self):
         # return actual cmd
-        if self.shell == False and (isinstance(self.cmd, str) or isinstance(self.cmd, unicode)):
+        if self.shell == False and (is_string(self.cmd)):
             return shlex.split(self.cmd)
-        elif self.shell == True and hasattr(self.cmd, '__iter__'):
+        elif self.shell == True and not is_string(self.cmd):
             return str(" ".join([ pipes.quote(arg) for arg in self.cmd ]))
         else:
-            if isinstance(self.cmd, unicode):
-                return str(self.cmd)
-            else:
+            if sys.version_info >= (3,):
                 return self.cmd
+            else:
+                if isinstance(self.cmd, unicode):
+                    return str(self.cmd)
+                else:
+                    return self.cmd
 
     def _common_reset(self):
         super(Process, self)._common_reset()
@@ -1079,7 +1090,7 @@ class Process(ProcessBase):
                 self.stderr_fd = self.process.stderr.fileno()
                 self.stdin_fd = self.process.stdin.fileno()
             self.pid = self.process.pid
-        except OSError, e:
+        except OSError as e:
             start_error = True
         with self._lock:
             self.started = True
@@ -1097,7 +1108,7 @@ class Process(ProcessBase):
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.start(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("process lifecycle handler %s start raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
         if self.error:
@@ -1105,7 +1116,7 @@ class Process(ProcessBase):
             for handler in list(self.lifecycle_handlers):
                 try:
                     handler.end(self)
-                except Exception, e:
+                except Exception as e:
                     logger.error("process lifecycle handler %s end raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
 
@@ -1147,7 +1158,7 @@ class Process(ProcessBase):
                     additionnal_processes_to_kill = _get_childs(self.pid)
                 try:
                     os.kill(self.pid, sig)
-                except OSError, e:
+                except OSError as e:
                     if e.errno == errno.EPERM:
                         if (self.pty
                             and (sig == signal.SIGTERM
@@ -1160,7 +1171,7 @@ class Process(ProcessBase):
                             try:
                                 other_debug_logs.append("EPERM for signal %s -> closing pty master side of %s" % (sig, str(self)))
                                 os.close(self._ptymaster)
-                            except OSError, e:
+                            except OSError as e:
                                 pass
                         else:
                             other_debug_logs.append(style.emph("EPERM: unable to send signal") + " to %s" % (str(self),))
@@ -1174,7 +1185,7 @@ class Process(ProcessBase):
         for p in additionnal_processes_to_kill:
             try:
                 os.kill(p, sig)
-            except OSError, e:
+            except OSError as e:
                 if e.errno == errno.EPERM or e.errno == errno.ESRCH:
                     pass
                 else:
@@ -1223,14 +1234,14 @@ class Process(ProcessBase):
             if self._ptymaster != None:
                 try:
                     os.close(self._ptymaster)
-                except OSError, e:
+                except OSError as e:
                     if e.errno == errno.EBADF: pass
                     else: raise e
                 self._ptymaster = None
             if self._ptyslave != None:
                 try:
                     os.close(self._ptyslave)
-                except OSError, e:
+                except OSError as e:
                     if e.errno == errno.EBADF: pass
                     else: raise e
                 self._ptyslave = None
@@ -1249,7 +1260,7 @@ class Process(ProcessBase):
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.end(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("process lifecycle handler %s end raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
 
@@ -1260,7 +1271,7 @@ class Process(ProcessBase):
             while self.__start_pending:
                 non_retrying_intr_cond_wait(self.started_condition)
             if not self.started:
-                raise ValueError, "Trying to wait a process which has not been started"
+                raise ValueError("Trying to wait a process which has not been started")
         timeout = get_seconds(timeout)
         if timeout != None:
             end = time.time() + timeout
@@ -1293,7 +1304,7 @@ class Process(ProcessBase):
         logger.iodebug("write to fd %s: %r" % (self.stdin_fd, s))
         try:
             os.write(self.stdin_fd, s)
-        except OSError, e:
+        except OSError as e:
             s = None
             with self._lock:
                 if not self.write_error:
@@ -1333,7 +1344,7 @@ class SshProcess(Process):
                                     host.port,
                                     connection_params)
                     + (get_rewritten_host_address(host.address, connection_params),))
-        if hasattr(cmd, '__iter__'):
+        if not is_string(cmd):
             real_cmd += cmd
         else:
             real_cmd += (cmd,)
@@ -1344,7 +1355,7 @@ class SshProcess(Process):
         `execo_g5k.config.default_oarsh_oarcp_params` to set pty to
         True, because oarsh/oarcp are run sudo which forbids to send
         signals)."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": name_from_cmdline(self.remote_cmd)})
         super(SshProcess, self).__init__(real_cmd, **kwargs)
         self.host = host
@@ -1374,7 +1385,7 @@ class TaktukProcess(ProcessBase): #IGNORE:W0223
 
     def __init__(self, cmd, host, **kwargs):
         self.remote_cmd = cmd
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": name_from_cmdline(self.remote_cmd)})
         super(TaktukProcess, self).__init__(cmd, **kwargs)
         self.host = Host(host)
@@ -1393,7 +1404,7 @@ class TaktukProcess(ProcessBase): #IGNORE:W0223
         # lifecycle handlers outside the lock
         with self._lock:
             if self.started:
-                raise ValueError, "unable to start an already started process"
+                raise ValueError("unable to start an already started process")
             self.started = True
             self.start_date = time.time()
             if self.timeout != None:
@@ -1404,7 +1415,7 @@ class TaktukProcess(ProcessBase): #IGNORE:W0223
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.start(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("process lifecycle handler %s start raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
         return self
@@ -1444,7 +1455,7 @@ class TaktukProcess(ProcessBase): #IGNORE:W0223
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.end(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("process lifecycle handler %s end raised exception for process %s:\n%s" % (
                         handler, self, format_exc()))
 
@@ -1559,7 +1570,7 @@ class PortForwarder(SshProcess):
         forwarding = intr_event_wait(self.forwarding, self.connection_params['forwarding_timeout'])
         if (not forwarding) or (not self.ok):
             self.kill()
-            raise ProcessesFailed, [ self ]
+            raise ProcessesFailed([ self ])
         return self
 
 class Serial(Process):

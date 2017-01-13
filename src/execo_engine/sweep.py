@@ -16,9 +16,13 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-import threading, os, fcntl, math
-import cPickle as pickle
-from log import logger
+import threading, os, fcntl, math, sys
+import pickle as pickle
+if sys.version_info >= (3,):
+    import pickle
+else:
+    import cPickle as pickle
+from .log import logger
 
 def geom(range_min, range_max, num_steps):
     """Return a geometric progression from range_min to range_max with num_steps"""
@@ -122,7 +126,7 @@ def sweep(parameters):
     return result
 
 # context manager for opening and locking files
-# beware: for locking purpose, the file is always opened in mode "a+"
+# beware: for locking purpose, the file is always opened in mode "ab+"
 # which is the only mode allowing both locking the file and having
 # read write access to it. but it forces to handle correctly file
 # position and truncation
@@ -132,7 +136,7 @@ class _openlock():
         self.__filename = filename
 
     def __enter__(self):
-        self.__file = open(self.__filename, "a+")
+        self.__file = open(self.__filename, "ab+")
         fcntl.lockf(self.__file, fcntl.LOCK_EX)
         return self.__file
 
@@ -473,7 +477,7 @@ class ParamSweeper(object):
                     if filtr:
                         remaining = filtr(remaining)
                     try:
-                        combination = iter(remaining).next()
+                        combination = next(iter(remaining))
                     except StopIteration:
                         logger.trace("%s no new combination", self.__name)
                         logger.trace(self)
@@ -672,9 +676,9 @@ def sweep_stats(stats):
         counts = dict()
         for comb in combs:
             for k in comb:
-                if not counts.has_key(k):
+                if k not in counts:
                     counts[k] = dict()
-                if not counts[k].has_key(comb[k]):
+                if comb[k] not in counts[k]:
                     counts[k][comb[k]] = 0
                 counts[k][comb[k]] += 1
         return counts
@@ -699,22 +703,22 @@ def sweep_stats(stats):
         inprogress_ratio[k1] = dict()
         done_ratio[k1] = dict()
         for k2 in ctotal[k1]:
-            if cremaining.has_key(k1) and cremaining[k1].has_key(k2):
+            if k1 in cremaining and k2 in cremaining[k1]:
                 r = cremaining[k1][k2]
             else:
                 r = 0
             remaining_ratio[k1][k2] = float(r) / float(ctotal[k1][k2])
-            if cskipped.has_key(k1) and cskipped[k1].has_key(k2):
+            if k1 in cskipped and k2 in cskipped[k1]:
                 s = cskipped[k1][k2]
             else:
                 s = 0
             skipped_ratio[k1][k2] = float(s) / float(ctotal[k1][k2])
-            if cinprogress.has_key(k1) and cinprogress[k1].has_key(k2):
+            if k1 in cinprogress and k2 in cinprogress[k1]:
                 i = cinprogress[k1][k2]
             else:
                 i = 0
             inprogress_ratio[k1][k2] = float(i) / float(ctotal[k1][k2])
-            if cdone.has_key(k1) and cdone[k1].has_key(k2):
+            if k1 in cdone and k2 in cdone[k1]:
                 d = cdone[k1][k2]
             else:
                 d = 0

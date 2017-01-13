@@ -19,18 +19,18 @@
 from execo.config import make_connection_params, configuration, SSH, TAKTUK, SCP, CHAINPUT
 from execo.host import Host
 from execo.process import get_process, STDOUT, STDERR, ExpectOutputHandler
-from host import get_hosts_list, get_unique_hosts_list
-from log import style, logger
-from process import ProcessLifecycleHandler, SshProcess, ProcessOutputHandler, \
+from .host import get_hosts_list, get_unique_hosts_list
+from .log import style, logger
+from .process import ProcessLifecycleHandler, SshProcess, ProcessOutputHandler, \
     TaktukProcess, Process, SerialSsh
-from report import Report
-from ssh_utils import get_rewritten_host_address, get_scp_command, \
+from .report import Report
+from .ssh_utils import get_rewritten_host_address, get_scp_command, \
     get_taktuk_connector_command, get_ssh_command
-from utils import name_from_cmdline, non_retrying_intr_cond_wait, intr_event_wait, get_port, \
+from .utils import name_from_cmdline, non_retrying_intr_cond_wait, intr_event_wait, get_port, \
     singleton_to_collection
 from traceback import format_exc
-from substitutions import get_caller_context, remote_substitute
-from time_utils import get_seconds, format_date, Timer
+from .substitutions import get_caller_context, remote_substitute
+from .time_utils import get_seconds, format_date, Timer
 import threading, time, pipes, tempfile, os, shutil, stat
 
 class ActionLifecycleHandler(object):
@@ -188,7 +188,7 @@ class Action(object):
             for handler in list(self.lifecycle_handlers):
                 try:
                     handler.end(self)
-                except Exception, e:
+                except Exception as e:
                     logger.error("action lifecycle handler %s end raised exception for action %s:\n%s" % (
                             handler, self, format_exc()))
             self.ended = True
@@ -203,13 +203,13 @@ class Action(object):
 
         return self"""
         if self.started:
-            raise ValueError, "Actions may be started only once"
+            raise ValueError("Actions may be started only once")
         self.started = True
         logger.debug(style.emph("start:") + " %s", self)
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.start(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("action lifecycle handler %s start raised exception for action %s:\n%s" % (
                         handler, self, format_exc()))
         return self
@@ -255,7 +255,7 @@ class Action(object):
         for handler in list(self.lifecycle_handlers):
             try:
                 handler.reset(self)
-            except Exception, e:
+            except Exception as e:
                 logger.error("action lifecycle handler %s reset raised exception for action %s:\n%s" % (
                         handler, self, format_exc()))
         self._common_reset()
@@ -503,7 +503,7 @@ class Remote(Action):
         self.cmd = cmd
         """The command to run remotely. substitions described in
         `execo.substitutions.remote_substitute` will be performed."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": name_from_cmdline(self.cmd)})
         super(Remote, self).__init__(**kwargs)
         self.connection_params = connection_params
@@ -635,7 +635,7 @@ class _TaktukRemoteOutputHandler(ProcessOutputHandler):
             else:
                 s += "empty string"
             return s
-        except Exception, e: #IGNORE:W0703
+        except Exception as e: #IGNORE:W0703
             logger.critical("%s: Unexpected exception %s while parsing taktuk output. Please report this message.", self.__class__.__name__, e)
             logger.critical("line received = %s", string.rstrip('\n'))
             return s
@@ -698,7 +698,7 @@ class _TaktukRemoteOutputHandler(ProcessOutputHandler):
                             self._log_unexpected_output(string)
                 else:
                     self._log_unexpected_output(string)
-        except Exception, e: #IGNORE:W0703
+        except Exception as e: #IGNORE:W0703
             logger.critical("%s: Unexpected exception %s while parsing taktuk output. Please report this message.", self.__class__.__name__, e)
             logger.critical("line received = %s", string.rstrip('\n'))
             raise
@@ -775,7 +775,7 @@ class TaktukRemote(Action):
         self.cmd = cmd
         """The command to run remotely. substitions described in
         `execo.substitutions.remote_substitute` will be performed."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": name_from_cmdline(self.cmd)})
         super(TaktukRemote, self).__init__(**kwargs)
         self.connection_params = connection_params
@@ -860,7 +860,7 @@ class TaktukRemote(Action):
                 else:
                     check_ports.add(check_default_port)
             if len(check_keyfiles) > 1 or len(check_ports) > 1:
-                raise ValueError, "unable to provide more than one keyfile / port for taktuk remote connection"
+                raise ValueError("unable to provide more than one keyfile / port for taktuk remote connection")
             global_keyfile = None
             global_port = None
             if len(check_keyfiles) == 1:
@@ -959,7 +959,7 @@ class Put(Remote):
         """
         self.hosts = hosts
         """Iterable of `execo.host.Host` onto which to copy the files."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s to %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(Remote, self).__init__(**kwargs)
         self.local_files = local_files
@@ -1026,7 +1026,7 @@ class Get(Remote):
         """
         self.hosts = hosts
         """Iterable of `execo.host.Host` from which to get the files."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s from %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(Remote, self).__init__(**kwargs)
         self.remote_files = remote_files
@@ -1138,7 +1138,7 @@ class _TaktukPutOutputHandler(_TaktukRemoteOutputHandler):
                         process._handle_stderr(line, False, False)
                 else:
                     self._log_unexpected_output(string)
-        except Exception, e: #IGNORE:W0703
+        except Exception as e: #IGNORE:W0703
             logger.critical("%s: Unexpected exception %s while parsing taktuk output. Please report this message.", self.__class__.__name__, e)
             logger.critical("line received = %s", string.rstrip('\n'))
 
@@ -1169,7 +1169,7 @@ class TaktukPut(TaktukRemote):
         """
         self.hosts = hosts
         """Iterable of `execo.host.Host` onto which to copy the files."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s to %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(TaktukRemote, self).__init__(**kwargs)
         self.local_files = local_files
@@ -1291,7 +1291,7 @@ class _TaktukGetOutputHandler(_TaktukRemoteOutputHandler):
                         process._handle_stderr(line, False, False)
                 else:
                     self._log_unexpected_output(string)
-        except Exception, e: #IGNORE:W0703
+        except Exception as e: #IGNORE:W0703
             logger.critical("%s: Unexpected exception %s while parsing taktuk output. Please report this message.", self.__class__.__name__, e)
             logger.critical("line received = %s", string.rstrip('\n'))
 
@@ -1322,7 +1322,7 @@ class TaktukGet(TaktukRemote):
         """
         self.hosts = hosts
         """Iterable of `execo.host.Host` from which to get the files."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s from %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(TaktukRemote, self).__init__(**kwargs)
         self.remote_files = remote_files
@@ -1389,7 +1389,7 @@ class Local(Action):
         """
         self.cmd = cmd
         """the command to run"""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": name_from_cmdline(self.cmd)})
         super(Local, self).__init__(**kwargs)
         if process_args != None:
@@ -1450,7 +1450,7 @@ class ParallelActions(Action):
 
     def __init__(self, actions, **kwargs):
         self.actions = actions
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s %i actions" % (self.__class__.__name__, len(self.actions))})
         super(ParallelActions, self).__init__(**kwargs)
         self.hide_subactions = False
@@ -1542,7 +1542,7 @@ class SequentialActions(Action):
 
     def __init__(self, actions, **kwargs):
         self.actions = actions
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s %i actions" % (self.__class__.__name__, len(self.actions))})
         super(SequentialActions, self).__init__(**kwargs)
         self.hide_subactions = False
@@ -1712,7 +1712,7 @@ class ChainPut(SequentialActions):
         self.local_files = local_files
         self.remote_location = remote_location
         self.connection_params = connection_params
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s to %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(ChainPut, self).__init__([], **kwargs)
         self.hide_subactions = True
@@ -1739,7 +1739,7 @@ class ChainPut(SequentialActions):
 
             chainscript_filename = tempfile.mktemp(prefix = 'tmp_execo_chainscript_')
             if not _execo_chainput:
-                raise EnvironmentError, "unable to find execo-chainput"
+                raise EnvironmentError("unable to find execo-chainput")
             shutil.copy2(_execo_chainput, chainscript_filename)
             os.chmod(chainscript_filename, os.stat(chainscript_filename).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH )
 
@@ -1832,7 +1832,7 @@ class RemoteSerial(Remote):
         """
         self.hosts = hosts
         """Iterable of `execo.host.Host` to which to connect and run the command."""
-        if not kwargs.has_key("name"):
+        if "name" not in kwargs:
             kwargs.update({"name": "%s to %i hosts" % (self.__class__.__name__, len(self.hosts))})
         super(Remote, self).__init__(**kwargs)
         self.connection_params = connection_params
@@ -1906,7 +1906,7 @@ class ActionFactory:
         elif self.remote_tool == TAKTUK:
             return TaktukRemote(*args, **kwargs)
         else:
-            raise KeyError, "no such remote tool: %s" % self.remote_tool
+            raise KeyError("no such remote tool: %s" % self.remote_tool)
 
     def get_fileput(self, *args, **kwargs):
         """Instanciates a `execo.action.Put`, `execo.action.TaktukPut` or `execo.action.ChainPut`"""
@@ -1917,7 +1917,7 @@ class ActionFactory:
         elif self.fileput_tool == CHAINPUT:
             return ChainPut(*args, **kwargs)
         else:
-            raise KeyError, "no such fileput tool: %s" % self.fileput_tool
+            raise KeyError("no such fileput tool: %s" % self.fileput_tool)
 
     def get_fileget(self, *args, **kwargs):
         """Instanciates a `execo.action.Get` or `execo.action.TaktukGet`"""
@@ -1926,7 +1926,7 @@ class ActionFactory:
         elif self.fileget_tool == TAKTUK:
             return TaktukGet(*args, **kwargs)
         else:
-            raise KeyError, "no such fileget tool: %s" % self.fileget_tool
+            raise KeyError("no such fileget tool: %s" % self.fileget_tool)
 
 default_action_factory = ActionFactory()
 

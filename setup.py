@@ -5,10 +5,12 @@
 # This file is part of Execo, released under the GNU Lesser Public
 # License, version 3 or later.
 
+from __future__ import print_function
 from distutils.command.clean import clean as _clean
 from distutils.dir_util import remove_tree
 from distutils import log
 import sys, subprocess, os, textwrap, shutil, re
+import codecs
 
 try:
     from setuptools import setup
@@ -31,7 +33,8 @@ def get_git_version():
     # returns None if not available
     try:
         p = subprocess.Popen(["git", "describe", "--tags", "--dirty", "--always"],
-                             stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+                             stdout = subprocess.PIPE, stderr = subprocess.PIPE,
+                             universal_newlines = True)
     except EnvironmentError:
         return None
     version = p.communicate()[0].rstrip()
@@ -70,7 +73,7 @@ def get_version():
 
 def read_file(filename, start_marker = None, end_marker = None):
     s = ""
-    with open(filename, "r") as ifh:
+    with codecs.open(filename, mode='r', encoding='utf-8') as ifh:
         insection = (start_marker == None)
         for line in ifh:
             line = line.rstrip()
@@ -88,8 +91,8 @@ def extract_conf(fh, source_file, marker):
     s = read_file(source_file, "# _STARTOF_ " + marker, "# _ENDOF_ " + marker)
     s = textwrap.dedent(s)
     for l in s.splitlines():
-        print >> fh, "# " + l
-    print >> fh, "\n"
+        print("# " + l, file=fh)
+    print("\n", file=fh)
 
 def generate_conf_template(datadir):
     try:
@@ -97,11 +100,11 @@ def generate_conf_template(datadir):
     except os.error:
         pass
     with open(os.path.join(datadir, "share", "execo", "execo.conf.py.sample"), "w") as fh:
-        print >> fh, "# sample execo user configuration"
-        print >> fh, "# copy this file to ~/.execo.conf.py and edit/modify it appropriately"
-        print >> fh
-        print >> fh, "# import logging, os, sys"
-        print >> fh
+        print("# sample execo user configuration", file=fh)
+        print("# copy this file to ~/.execo.conf.py and edit/modify it appropriately", file=fh)
+        print(file=fh)
+        print("# import logging, os, sys", file=fh)
+        print(file=fh)
         extract_conf(fh, os.path.join("src", "execo", "config.py"), "configuration")
         extract_conf(fh, os.path.join("src", "execo", "config.py"), "default_connection_params")
         extract_conf(fh, os.path.join("src", "execo_g5k", "config.py"), "g5k_configuration")
@@ -134,7 +137,7 @@ class install(_install):
 
 class install_doc(_install):
     def run(self):
-        self.run_command('build_doc')
+        #self.run_command('build_doc')
         build = self.get_finalized_command('build')
         build_dir = os.path.join(os.path.abspath(build.build_base), "sphinx", "html")
         build_dir = os.path.abspath(build_dir)
@@ -172,6 +175,7 @@ if __name__ == "__main__":
         cmdclass = { 'build_py': build_py,
                      'sdist': sdist,
                      'install': install,
+                     'install_doc': install_doc,
                      'clean': clean }
 
     name = 'execo'
@@ -196,7 +200,9 @@ if __name__ == "__main__":
                           'Intended Audience :: Science/Research',
                           'Intended Audience :: System Administrators',
                           'Operating System :: POSIX :: Linux',
-                          'Programming Language :: Python :: 2.5',
+                          'Programming Language :: Python :: 2.6',
+                          'Programming Language :: Python :: 2.7',
+                          'Programming Language :: Python :: 3.2+',
                           'Topic :: Software Development',
                           'Topic :: System :: Clustering',
                           'Topic :: System :: Distributed Computing'],

@@ -16,12 +16,16 @@
 # You should have received a copy of the GNU General Public License
 # along with Execo.  If not, see <http://www.gnu.org/licenses/>
 
-from log import style
-from time_utils import format_date, format_duration
+from .log import style
+from .time_utils import format_date, format_duration
 import sys
+if sys.version_info >= (3,):
+    _BIGNUM = sys.maxsize
+else:
+    _BIGNUM = sys.maxint
 
 #def sort_reports(reports):
-#    reports.sort(key = lambda report: report.stats().get('start_date') or sys.maxint)
+#    reports.sort(key = lambda report: report.stats().get('start_date') or _BIGNUM)
 
 class Report(object):
 
@@ -85,7 +89,7 @@ class Report(object):
         aggstats = stats.copy()
         no_end_date = False
         for substats in stats['sub_stats']:
-            for k in substats.keys():
+            for k in substats:
                 if k == 'start_date':
                     if (substats[k] != None
                         and (aggstats[k] == None or substats[k] < aggstats[k])):
@@ -267,7 +271,7 @@ class Report(object):
         stats = self.stats()
         if not brief and len(stats['sub_stats']) > 0:
             for sub_stats in sorted(stats['sub_stats'],
-                key = lambda stats: stats.get('start_date') or sys.maxint):
+                                    key = lambda stats: stats.get('start_date') or _BIGNUM):
                 output += recurse_stats(sub_stats, 0)
             if wide:
                 output += "--------------------------------------------------------------------------------------------------------------------------------------------------------------\n"
